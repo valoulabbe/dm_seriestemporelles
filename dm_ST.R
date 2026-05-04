@@ -1,55 +1,27 @@
-install.packages("fUnitRoots")
-library(fUnitRoots)
-library(dplyr)
-library(lubridate)
+
 library(zoo)
-require(tseries)
+library(tseries)
+library(fUnitRoots)
 
+# IMPORTATION ET NETTOYAGE
+serie <- read.csv("valeurs_mensuelles.csv", sep=";", skip=3, header=TRUE)
+colnames(serie) <- c("Date", "IPI", "Codes")
 
-serie <- read.csv("valeurs_mensuelles.csv",sep=";")
-serie <- serie %>% select(-Codes)
-serie <- serie[-c(1:3),]
-colnames(serie) <- c("Date", "Valeur")
+# Nettoyage et tri
+serie <- serie[!is.na(serie$IPI), ]
+serie <- serie[order(serie$Date), ]
+serie$IPI <- as.numeric(serie$IPI)
 
-serie$Valeur <- as.numeric(serie$Valeur)
+# Indexation temporelle et création de l'objet zoo
 dates <- as.yearmon(serie$Date, "%Y-%m")
-value_serie <- zoo(serie$Valeur, order.by = dates)
+ipi_complet <- zoo(serie$IPI, order.by = dates)
 
-plot(value_serie)
+# Troncature avant le COVID-19 (fin 2019)
+ipi <- window(ipi_complet, end = as.yearmon("2019-12"))
 
-#La série semble exhiber une tendance déterministe linéaire, en effet la pente est assez linéaire
-trend <- 1:length(value_serie)
-linear_trend <- lm(value_serie ~ trend))
-resid <- linear_trend$residuals
+plot(ipi, main="IPI - Industrie Pharmaceutique (Pré-COVID)", ylab="Indice", xlab="Temps")
 
-pacf(resid)
-acf(resid,lag=60)
-#la série est extrêmement persistante, il y a de l'autocorrélation jusqu'à plus de 50 lags
-#la PACF s'arrête à 5, donc q < 6  
-
-## Dans le TD5, ils commentent la significativité de la régression : peut-être faire un commentaire
-#"Le coefficient associ´e `a la tendance lin´eaire (dates) est bien n´egative, et peut-ˆetre significative (on ne peut pas
-#vraiment le confirmer car le test n’est pas valide en pr´esence de r´esidus possiblement autocorr´el´es"
-
-# VERIFICATION DE LA STATIONNARITE (test de racine unitaire), on sélectionne le test sans constante ni trend pusqu'il s'agit des résidus
-# or les résidus d'une régression sont déjà centrés 
-
-# Un test Dickey-Fuller simple avec lag = 0 ne fonctionnerait pas puisqu'on soupçonne un processus AR(p) avec p >1
-plot(resid)
-adfTest(resid, lag = 1, type = "nc") #j'ai pas compris il fallait mettre lag cb ici 
-
-#
-pp.test(resid)
-kpss.test(resid, null = "Level")
-
-# On peut faire un test de racine unitaire sur la série de base 
-adf <-adfTest(value_serie, lag = 1, type = "ct")
-
-
-# pas trop compris ce qu'il fallait faire
-Qtests(adf@test$lm$residuals, 24, length(adf@test$lm$coefficients))
-
-
+# FONCTIONS DE VALIDATION DU TD5 
 Qtests <- function(series, k, fitdf=0) {
   pvals <- apply(matrix(1:k), 1, FUN=function(l) {
     pval <- if (l<=fitdf) NA else Box.test(series, lag=l, type="Ljung-Box", fitdf=fitdf)$p.value
@@ -57,3 +29,58 @@ Qtests <- function(series, k, fitdf=0) {
   })
   return(t(pvals))
 }
+
+adfTest_valid <- function(series, kmax, adftype){
+  k <- 0
+  noautocorr <- 0
+  while (noautocorr==0){
+    cat(paste0("ADF with ",k," lags: residuals OK? "))
+    adf <- adfTest(series, lags=k, type=adftype)
+    pvals <- Qtests(adf@test$lm$residuals, 24, fitdf = length(adf@test$lm$coefficients))[,2]
+    if (sum(pvals<0.05,na.rm=T)==0) {
+      noautocorr <- 1; cat("OK \n")
+    } else cat("nope \n")
+    k <- k+1
+  }
+  return(adf)
+}
+
+# --- TESTS DE STATIONNARITÉ ---
+# La série a une tendance visible, on teste avec constante et tendance (type="ct")
+cat("\n--- Test ADF sur la série en niveau ---\n")
+adf_niveau <- adfTest_valid(ipi, 24, "ct")
+print(adf_niveau)
+
+
+# La boucle a automatiquement sélectionné 11 retards (Lag Order: 11) pour 
+# garantir l'absence d'autocorrélation des résidus (validé par Ljung-Box).
+#
+# Statistique Dickey-Fuller : -1.8054
+# P-VALUE : 0.659
+#
+# INTERPRÉTATION :
+# La p-value (0.659) est très largement supérieure au seuil de 5% (0.05).
+# Dans le cadre du test ADF, l'hypothèse nulle (H0) postule la présence 
+# d'une racine unitaire.
+# -> Nous ne pouvons donc PAS rejeter H0.
+# -> CONCLUSION : La série de l'IPI en niveau est NON-STATIONNAIRE.
+
+# Différenciation première pour stationnariser
+d_ipi <- diff(ipi, 1)
+plot(d_ipi, main="IPI Pharmaceutique - Différence première", ylab="Δ IPI")
+
+# Test ADF sur la série différenciée (sans tendance, type="c")
+cat("\n--- Test ADF sur la série différenciée ---\n")
+adf_diff <- adfTest_valid(d_ipi, 24, "c")
+print(adf_diff)
+
+# INTERPRÉTATION :
+# La p-value (0.01) est strictement inférieure au seuil de 5% (0.05).
+# -> Nous REJETONS l'hypothèse nulle (H0) de présence d'une racine unitaire.
+# -> CONCLUSION : La série différenciée en différence première est STATIONNAIRE.
+#
+# BILAN DE L'ÉTUDE DE STATIONNARITÉ (PARTIE I) :
+# La série en niveau étant non-stationnaire et la série en différence 
+# première étant stationnaire, on conclut que la série de l'IPI 
+# de l'industrie pharmaceutique est intégrée d'ordre 1, noté I(1).
+#
