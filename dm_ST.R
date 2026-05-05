@@ -84,3 +84,52 @@ print(adf_diff)
 # première étant stationnaire, on conclut que la série de l'IPI 
 # de l'industrie pharmaceutique est intégrée d'ordre 1, noté I(1).
 #
+
+
+
+# Etude des fonctions d'autocorrélations et d'autocorrélations partielles
+acf(d_ipi)
+pacf(d_ipi)
+
+# Les fonctions d'autocorrélations sont signicatives jusqu'à q*=2
+# Les fonctions d'autocorrélations partielles elles, jusqu'à p* =2 
+# Si la série suit un processus ARIMA, elle suit "au plus",
+# un processus ARIMA(p*=2,d=1,q*=2)
+
+
+#On vérifie la validité d'un ARIMA(2,1,2) en regardant l'autocorrélation des résidus 
+arima212 <- arima(ipi,c(2,1,2)) 
+Box.test(arima212$residuals, lag=5, type="Ljung-Box", fitdf=4) 
+
+#L'hypothèse nulle est rejetée, avec une p-value inférieur à 1%, les résidus à un horizon inférieur à 5 sont autocorrélés 
+# En réanalysant la pacf de la série différenciée, on peut voir que nous sommes allé trop vite en ignorant de l'autocorrélation partielle significative jusqu'à p=4
+
+
+#On vérifie la validité d'un ARIMA(4,1,2) en regardant l'autocorrélation des résidus 
+arima412 <- arima(ipi,c(4,1,2)) 
+Box.test(arima412$residuals, lag=7, type="Ljung-Box", fitdf=6) 
+
+
+#L'hypothèse nulle n'est pas rejetée au seuil de 5%, on peut supposer 
+# que les résidus jusqu'à l'horizon 6 ne sont pas autocorrélés
+# On peut vérifier pour des horizons plus long en traçant les ACF/PACF des résidus 
+pacf(arima412$residuals)
+acf(arima412$residuals)
+
+#On voit de l'autocorrélation qui est lié à de la saisonnalité
+#On le voit également en testant la nullité jointes des coefficients d'autocorrélations des résidus 
+Qtests <- function(series, k, fitdf=0) {
+  pvals <- apply(matrix(1:k), 1, FUN=function(l) {
+    pval <- if (l<=fitdf) NA else Box.test(series, lag=l, type="Ljung-Box", fitdf=fitdf)$p.value
+    return(c("lag"=l,"pval"=pval))
+  })
+  return(t(pvals))
+}
+Qtests(arima412$residuals, 24, 6)
+
+# Il faut donc corriger la saisonalité 
+# NOTE : j'ai pas trop compris comment utiliser ça, mais visiblement ça marche pas
+# On peut tester un modèle SARIMA(4,1,2)(1,1,0)
+sarima412.110 <-arima(ipi,c(4,1,2), seasonal = list(order = c(0,1,0), period = 12)) 
+pacf(sarima412.110$residuals)
+acf(sarima412.110$residuals)
