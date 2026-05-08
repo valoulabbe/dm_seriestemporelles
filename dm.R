@@ -100,7 +100,7 @@ print(adf_diff)
 
 # -------------------------------------------------------------------------
 # INTERPRÉTATION DU TEST ADF SUR LA SÉRIE DIFFÉRENCIÉE :
-# La boucle a automatiquement sélectionné 7 retards (Lag Order: 10).
+# La boucle a automatiquement sélectionné 7 retards (Lag Order: 7).
 # Statistique Dickey-Fuller : -10.1529
 # P-VALUE : < 0.01
 #
